@@ -38,20 +38,32 @@ class check:
 
 class Cellular(object):
     def __init__(self):
+        # 应对策略
+        self.strategy = "random"
+        
         self.grass_cells = ProcessData.getGrassData()
         self.herbivores_cells = ProcessData.getHerbivoresData()
         self.carnivores_cells = ProcessData.getCarnivoresData()
         self.humans_cells = ProcessData.getHumansData()
-        self.human_effect_cells = Caculate.caculateHumansEffect(
-            self.humans_cells)
+        self.human_effect_cells, self.human_effect_pos = Caculate.caculateHumansEffect(
+            self.humans_cells, self.strategy)
         # self.human_effect_cells = np.zeros(self.grass_cells.shape)
-        self.segmentation_data = ProcessData.getSegmentationData()
+        self.national_part, self.animal_part, self.farm_part, self.notional_expand_part = ProcessData.getSegmentationData()
         self.mask = self.grass_cells
         self.timer = 0
 
+        # 效益
+        if self.strategy == "normal":
+            self.human_cost = 0
+        elif self.strategy == "elec":
+            self.human_cost = 20000
+        else:
+            self.human_cost = 50000
+
     def update_state(self):
-        self.grass_cells, self.herbivores_cells, self.carnivores_cells = Caculate.caculateAll(
-            self.grass_cells, self.herbivores_cells, self.carnivores_cells, self.human_effect_cells)
+        self.grass_cells, self.herbivores_cells, self.carnivores_cells, cost = Caculate.caculateAll(
+            self.grass_cells, self.herbivores_cells, self.carnivores_cells, self.human_effect_cells, self.human_effect_pos)
+        self.human_cost += cost
         self.timer += 1
 
     def visulize(self, cells):
@@ -169,7 +181,7 @@ class ProcessData(object):
         return cells
 
     def getSegmentationData():
-        return [(40, 0), (0, 50), (30, 20), (50, 60), (20, 30), (35, 70), (50, 0), (30, 75)]
+        return [(40, 0), (25, 20), (50, 60), (65, 50), (40, 0)], [(25, 20), (13, 32), (38, 67), (50, 60), (25, 20)], [(13, 32), (0, 50), (35, 70), (38, 67), (13, 32), ], [(40, 0), (20, 25), (45, 65), (65, 50), (40, 0)]
 
     def getStatus(path):
         return np.loadtxt(path, delimiter=',')
@@ -191,13 +203,13 @@ class Caculate(object):
     n2 = 0.001  # 食肉动物自我竞争影响
     # human_effect_herbivores = 0
     # human_effect_carnivores = 0
-    human_effect_herbivores = -0.005
+    human_effect_herbivores = -0.05
     human_effect_carnivores = -0.005
     t = 0
 
-    def caculateAll(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells):
+    def caculateAll(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells, human_effect_pos):
         Caculate.t += 1/12
-        return Caculate.caculateGrass(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells), Caculate.caculateHerbivores(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells), Caculate.caculateCarnivores(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells)
+        return Caculate.caculateGrass(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells), Caculate.caculateHerbivores(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells), Caculate.caculateCarnivores(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells), Caculate.caculateHumanCost(grass_cells, herbivores_cells, carnivores_cells, human_effect_pos)
 
     def caculateGrass(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells):
         grass_neighbor = Caculate.getNeighborNum(grass_cells)
@@ -259,7 +271,7 @@ class Caculate(object):
 
         return carnivores_cells
 
-    def caculateHumansEffect(humans_cells):
+    def caculateHumansEffect(humans_cells, mode="normal"):
         human_effect_cells = np.zeros(humans_cells.shape)
         for i in range(human_effect_cells.shape[0]):
             for j in range(human_effect_cells.shape[1]):
@@ -272,8 +284,17 @@ class Caculate(object):
                                 human_effect_cells[i][j] += 10
                             else:
                                 human_effect_cells[i][j] += 1/human_effect
-        human_effect_cells = human_effect_cells-np.mean(human_effect_cells)
-        return human_effect_cells
+        human_effect_pos = human_effect_cells > np.mean(human_effect_cells)
+        if mode == "normal":
+            human_effect_cells = human_effect_cells-np.mean(human_effect_cells)
+            return human_effect_cells, human_effect_pos
+        if mode == "elec":
+            human_effect_cells = human_effect_cells-np.mean(human_effect_cells)
+            human_effect_cells[human_effect_cells > 0] = 1000
+            return human_effect_cells, human_effect_pos
+        else:
+            human_effect_cells *= 10
+            return human_effect_cells, human_effect_pos
 
     def caculateDistance(i, j, l, r):
         return (i-l)*(i-l)+(j-r)*(j-r)
@@ -299,6 +320,12 @@ class Caculate(object):
                     cells[i+1][j] + cells[i+1][j+1]
         return neighbor
 
+    def caculateHumanCost(grass_cells, herbivores_cells, carnivores_cells, human_effect_pos):
+        grass_cost = np.sum(grass_cells[human_effect_pos])
+        herbivores_cost = np.sum(herbivores_cells[human_effect_pos])
+        carnivores_cost = np.sum(carnivores_cells[human_effect_pos])
+        return 0.01*grass_cost + 0.01*herbivores_cost + 0.01*carnivores_cost
+
 
 if __name__ == '__main__':
     game = Cellular()
@@ -309,3 +336,4 @@ if __name__ == '__main__':
     print(np.sum(game.grass_cells))
     print(np.sum(game.herbivores_cells))
     print(np.sum(game.carnivores_cells))
+    print(game.human_cost)
