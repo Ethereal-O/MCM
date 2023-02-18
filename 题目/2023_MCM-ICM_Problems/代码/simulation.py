@@ -1,4 +1,7 @@
 import random
+import cv2
+import imageio
+
 class check:
     def isRayIntersectsSegment(poi,s_poi,e_poi):
         if s_poi[1]==e_poi[1]:
@@ -31,8 +34,8 @@ class check:
         return True if sinsc%2==1 else  False
 
 class getMotion:
-    poly_boader = [(58,294),(321,80),(521,260),(608,341),(642,616),(58,294)]
-    poly_three_borders = [[(58,294),(321,80),(358,294),(315,430),(58,294)],[(321,80),(521,260),(358,294),(321,80)],[(521,260),(608,341),(642,616),(315,430),(358,294),(521,260)]]
+    poly_boader = [(39,299),(161,201),(257,285),(298,325),(310,450),(39,299)]
+    poly_three_borders = [[(39,299),(161,201),(184,303),(165,371),(39,299)],[(161,201),(257,285),(310,450),(161,201)],[(257,285),(298,325),(310,450),(165,371),(184,303),(257,285)]]
     def get_motion(poi):
         if not check.isPoiWithinPoly(poi,getMotion.poly_boader):
             return [0,0]
@@ -54,10 +57,10 @@ class getMotion:
         return [random.random(),random.random()]
         
 class simulation:
-    start = [166,332]
+    start = [92,315]
     def init():
-        elephant = [(int(simulation.start[0] + 10*random.random()),int(simulation.start[1] + 10*random.random())) for i in range(500)]
-        return elephant
+        migration = [(int(simulation.start[0] + 10*random.random()),int(simulation.start[1] + 10*random.random())) for i in range(500)]
+        return migration
     def update(ans):
         ans_up = []
         for an in ans:
@@ -65,16 +68,28 @@ class simulation:
             ans_up.append((int(an[0]+3*motion[0]),int(an[1]+3*motion[1]))) 
         return ans_up
 
+class drawPermanentData:
+    def getAll(img):
+        drawPermanentData.getElephant(img)
+    def getElephant(img):
+        elephant_circle_points = [(82,275),(161,241),(185,331),(260,380)]
+        elephant_points = []
+        for point in elephant_circle_points:
+            for i in range(100):
+                elephant_points.append((int(point[0]+50*random.random()),int(point[1]+50*random.random())))
+        for point in elephant_points:
+            cv2.circle(img,point,2,(255,0,0),-1)
+        
 def main():
-    import cv2
-    import imageio
     points = simulation.init()
     imgs=[]
     for i in range(1000):
-        img = cv2.imread("./1.jpg") # 读取图片
+        img = cv2.imread("./map.jpg") # 读取图片
         points = simulation.update(points)
         for point in points:
             cv2.circle(img,point,2,(0,0,255),-1)
+            
+        drawPermanentData.getAll(img)
         imgs.append(img)
         
     imageio.mimsave("test.gif",imgs,fps=5)
