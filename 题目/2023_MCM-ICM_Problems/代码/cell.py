@@ -4,7 +4,7 @@ import cv2
 import matplotlib.pyplot as plt
 
 
-class check:
+class Check(object):
     def isRayIntersectsSegment(poi, s_poi, e_poi):
         if s_poi[1] == e_poi[1]:
             return False
@@ -30,25 +30,36 @@ class check:
         for i in range(len(poly)-1):  # [0,len-1]
             s_poi = poly[i]
             e_poi = poly[i+1]
-            if check.isRayIntersectsSegment(poi, s_poi, e_poi):
+            if Check.isRayIntersectsSegment(poi, s_poi, e_poi):
                 sinsc += 1
 
         return True if sinsc % 2 == 1 else False
 
 
+class Part(object):
+    def __init__(self, national_part, animal_part, farm_part, migaration_part):
+        self.national_part = national_part
+        self.animal_part = animal_part
+        self.farm_part = farm_part
+        self.migaration_part = migaration_part
+
+
 class Cellular(object):
     def __init__(self):
         # 应对策略
-        self.strategy = "random"
-        
+        self.strategy = "normal"
+        self.isExtendProtect = True
+
         self.grass_cells = ProcessData.getGrassData()
         self.herbivores_cells = ProcessData.getHerbivoresData()
         self.carnivores_cells = ProcessData.getCarnivoresData()
         self.humans_cells = ProcessData.getHumansData()
         self.human_effect_cells, self.human_effect_pos = Caculate.caculateHumansEffect(
             self.humans_cells, self.strategy)
-        # self.human_effect_cells = np.zeros(self.grass_cells.shape)
-        self.national_part, self.animal_part, self.farm_part, self.notional_expand_part = ProcessData.getSegmentationData()
+
+        segmentation = ProcessData.getSegmentationData(self.isExtendProtect)
+        self.part = Part(
+            segmentation[0], segmentation[1], segmentation[2], segmentation[3])
         self.mask = self.grass_cells
         self.timer = 0
 
@@ -61,9 +72,8 @@ class Cellular(object):
             self.human_cost = 50000
 
     def update_state(self):
-        self.grass_cells, self.herbivores_cells, self.carnivores_cells, cost = Caculate.caculateAll(
-            self.grass_cells, self.herbivores_cells, self.carnivores_cells, self.human_effect_cells, self.human_effect_pos)
-        self.human_cost += cost
+        self.grass_cells, self.herbivores_cells, self.carnivores_cells, self.human_cost = Caculate.caculateAll(
+            self)
         self.timer += 1
 
     def visulize(self, cells):
@@ -180,20 +190,31 @@ class ProcessData(object):
                     cells[i][j] = 0
         return cells
 
-    def getSegmentationData():
-        return [(40, 0), (25, 20), (50, 60), (65, 50), (40, 0)], [(25, 20), (13, 32), (38, 67), (50, 60), (25, 20)], [(13, 32), (0, 50), (35, 70), (38, 67), (13, 32), ], [(40, 0), (20, 25), (45, 65), (65, 50), (40, 0)]
+    def getSegmentationData(isExtendProtect=False):
+        national_part = [(40, 0), (25, 20), (50, 60), (65, 50), (40, 0)]
+        animal_part = [(25, 20), (13, 32), (38, 67), (50, 60), (25, 20)]
+        farm_part = [(13, 32), (0, 50), (35, 70), (38, 67), (13, 32), ]
+        national_expand_part = [(40, 0), (20, 25), (45, 65), (65, 50), (40, 0)]
+        animal_reduct_part = [(20, 25), (13, 32), (38, 67), (45, 65), (20, 25)]
+        migaration_part = [[(50, 20), (40, 20), (40, 30), (50, 30), (50, 20)], [(
+            40, 30), (30, 30), (30, 40), (40, 40), (40, 30)], [(50, 40), (40, 40), (40, 50), (50, 50), (50, 40)]]
+        if isExtendProtect:
+            return national_expand_part, animal_reduct_part, farm_part, migaration_part
+        else:
+            return national_part, animal_part, farm_part, migaration_part
 
     def getStatus(path):
         return np.loadtxt(path, delimiter=',')
 
 
 class Caculate(object):
-    k = 0.1  # 0.05-0.2 # the rainfall constant
+    k = 0.15  # 0.05-0.2 # the rainfall constant
+    # k = 0.1  # 0.05-0.2 # the rainfall constant
     theta = 6  # 周期
     alpha = 0.0002  # 0.00005-0.00025 # 食草动物对草的影响
     fei = 5  # 迁出率
     delta = 5  # 迁入率
-    yita = 0.2  # 0.1-0.2草对食草动物的影响
+    yita = 0.25  # 0.1-0.2草对食草动物的影响
     gama = 0.002  # 0.0005-0.003 # 逻辑斯蒂系数
     omiga = 0.04  # 0.05-0.2 # 食草动物被捕食率
     psi = 0.05  # 0.02-0.025 # 食肉动物自然死亡率
@@ -205,13 +226,28 @@ class Caculate(object):
     # human_effect_carnivores = 0
     human_effect_herbivores = -0.05
     human_effect_carnivores = -0.005
+    migration_rates = 1
+    migration_num = 300
+    migration_grass_rates = 0.2
+    grass_cost_rate = 0.01
+    herbivores_cost_rate = 0.01
+    carnivores_cost_rate = 0.01
+    grass_protect_rate = 0.01
+    herbivores_protect_rate = 0.1
+    carnivores_protect_rate = 0.01
+    national_protect = 2
+    animal_protect = 1
+    farm_protect = 0
     t = 0
 
-    def caculateAll(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells, human_effect_pos):
+    def caculateAll(cellular):
         Caculate.t += 1/12
-        return Caculate.caculateGrass(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells), Caculate.caculateHerbivores(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells), Caculate.caculateCarnivores(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells), Caculate.caculateHumanCost(grass_cells, herbivores_cells, carnivores_cells, human_effect_pos)
+        return Caculate.caculateGrass(cellular.grass_cells, cellular.herbivores_cells, cellular.carnivores_cells, cellular.human_effect_cells, cellular.part
+                                      ), Caculate.caculateHerbivores(cellular.grass_cells, cellular.herbivores_cells, cellular.carnivores_cells, cellular.human_effect_cells, cellular.part
+                                                                     ), Caculate.caculateCarnivores(cellular.grass_cells, cellular.herbivores_cells, cellular.carnivores_cells, cellular.human_effect_cells, cellular.part
+                                                                                                    ), Caculate.caculateHumanCost(cellular.grass_cells, cellular.herbivores_cells, cellular.carnivores_cells, cellular.human_effect_pos, cellular.human_cost)
 
-    def caculateGrass(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells):
+    def caculateGrass(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells, part):
         grass_neighbor = Caculate.getNeighborNum(grass_cells)
         herbivores_neighbor = Caculate.getNeighborNum(herbivores_cells)
 
@@ -220,13 +256,15 @@ class Caculate(object):
                 motion = Caculate.k*math.sin(Caculate.theta*Caculate.t)*(grass_cells[i][j]/np.max(grass_cells)) * \
                     grass_neighbor[i][j] - Caculate.alpha * \
                     herbivores_neighbor[i][j] + \
-                    Caculate.w*grass_cells[i][j]
-                # motion = motion*grass_cells[i][j]/np.max(grass_cells[i][j])
+                    Caculate.w * \
+                    grass_cells[i][j] + Caculate.getProtectGain(
+                        i, j, part, "Grass")*grass_neighbor[i][j] + Caculate.caculateGrassMigration(part)*grass_cells[i][j]
+
                 grass_cells[i][j] = min(max(grass_cells[i][j] + motion, 0), 1)
 
         return grass_cells
 
-    def caculateHerbivores(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells):
+    def caculateHerbivores(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells, part):
         grass_neighbor = Caculate.getNeighborNum(grass_cells)
         herbivores_neighbor = Caculate.getNeighborNum(herbivores_cells)
         carnivores_neighbor = Caculate.getNeighborNum(carnivores_cells)
@@ -245,7 +283,9 @@ class Caculate(object):
                     (1-index) + Caculate.human_effect_herbivores * \
                     human_effect_cells[i][j] * herbivores_neighbor[i][j] - \
                     Caculate.n1 * \
-                    herbivores_neighbor[i][j]*herbivores_neighbor[i][j]
+                    herbivores_neighbor[i][j]*herbivores_neighbor[i][j] + Caculate.getProtectGain(
+                        i, j, part, "Herbivores")*herbivores_neighbor[i][j]
+                # + Caculate.caculateMigration(i, j, part)
 
                 # print(Caculate.fei*index + Caculate.delta * (1-index))
 
@@ -253,7 +293,7 @@ class Caculate(object):
                     herbivores_cells[i][j] + motion, 0)
         return herbivores_cells
 
-    def caculateCarnivores(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells):
+    def caculateCarnivores(grass_cells, herbivores_cells, carnivores_cells, human_effect_cells, part):
         herbivores_neighbor = Caculate.getNeighborNum(herbivores_cells)
         carnivores_neighbor = Caculate.getNeighborNum(carnivores_cells)
 
@@ -265,7 +305,8 @@ class Caculate(object):
                     Caculate.human_effect_carnivores * \
                     human_effect_cells[i][j] * carnivores_neighbor[i][j] - \
                     Caculate.n1 * \
-                    carnivores_neighbor[i][j]*carnivores_neighbor[i][j]
+                    carnivores_neighbor[i][j]*carnivores_neighbor[i][j] + Caculate.getProtectGain(
+                        i, j, part, "Carnivores")*carnivores_neighbor[i][j]
                 carnivores_cells[i][j] = max(
                     carnivores_cells[i][j] + motion, 0)
 
@@ -299,17 +340,36 @@ class Caculate(object):
     def caculateDistance(i, j, l, r):
         return (i-l)*(i-l)+(j-r)*(j-r)
 
-    def caculateMigration(grass_cells, herbivores_cells, carnivores_cells):
-        grass_neighbor = Caculate.getNeighborNum(grass_cells)
-        herbivores_neighbor = Caculate.getNeighborNum(herbivores_cells)
-        magration = np.zeros(grass_cells.shape)
-        for i in range(grass_cells.shape[0]):
-            for j in range(grass_cells.shape[1]):
-                index = math.exp(-grass_neighbor[i]
-                                 [j]/herbivores_neighbor[i][j])
-                magration[i][j] = -Caculate.fei * \
-                    index + Caculate.theta*(1-index)
-        return magration
+    def caculateMigration(i, j, part):
+        if int((Caculate.t*12) % 12) == 7:
+            if Check.isPoiWithinPoly((i, j), part.migaration_part[0]):
+                return Caculate.migration_rates*Caculate.migration_num*1.5
+        if int((Caculate.t*12) % 12) == 8:
+            if Check.isPoiWithinPoly((i, j), part.migaration_part[0]):
+                return -Caculate.migration_rates*Caculate.migration_num
+            if Check.isPoiWithinPoly((i, j), part.migaration_part[1]):
+                return Caculate.migration_rates*Caculate.migration_num*1.5
+        if int((Caculate.t*12) % 12) == 11:
+            if Check.isPoiWithinPoly((i, j), part.migaration_part[1]):
+                return -Caculate.migration_rates*Caculate.migration_num
+            if Check.isPoiWithinPoly((i, j), part.migaration_part[2]):
+                return Caculate.migration_rates*Caculate.migration_num*1.5
+        if int((Caculate.t*12) % 12) == 2:
+            if Check.isPoiWithinPoly((i, j), part.migaration_part[2]):
+                return -Caculate.migration_rates*Caculate.migration_num
+        return 0
+
+    def caculateGrassMigration(part):
+        if int((Caculate.t*12) % 12) >= 7 and int((Caculate.t*12) % 12) <= 9:
+            return -Caculate.migration_grass_rates
+        else:
+            return 0
+
+    def caculateHumanCost(grass_cells, herbivores_cells, carnivores_cells, human_effect_pos, human_cost):
+        grass_cost = np.sum(grass_cells[human_effect_pos])
+        herbivores_cost = np.sum(herbivores_cells[human_effect_pos])
+        carnivores_cost = np.sum(carnivores_cells[human_effect_pos])
+        return human_cost + Caculate.grass_cost_rate*grass_cost + Caculate.herbivores_cost_rate*herbivores_cost + Caculate.carnivores_cost_rate*carnivores_cost
 
     def getNeighborNum(cells):
         neighbor = np.zeros(cells.shape)
@@ -320,11 +380,29 @@ class Caculate(object):
                     cells[i+1][j] + cells[i+1][j+1]
         return neighbor
 
-    def caculateHumanCost(grass_cells, herbivores_cells, carnivores_cells, human_effect_pos):
-        grass_cost = np.sum(grass_cells[human_effect_pos])
-        herbivores_cost = np.sum(herbivores_cells[human_effect_pos])
-        carnivores_cost = np.sum(carnivores_cells[human_effect_pos])
-        return 0.01*grass_cost + 0.01*herbivores_cost + 0.01*carnivores_cost
+    def getProtectGain(i, j, part, type):
+        if type == "Grass":
+            if Check.isPoiWithinPoly((i, j), part.national_part):
+                return Caculate.grass_protect_rate * Caculate.national_protect
+            if Check.isPoiWithinPoly((i, j), part.animal_part):
+                return Caculate.grass_protect_rate * Caculate.animal_protect
+            if Check.isPoiWithinPoly((i, j), part.farm_part):
+                return Caculate.grass_protect_rate * Caculate.farm_protect
+        if type == "Herbivores":
+            if Check.isPoiWithinPoly((i, j), part.national_part):
+                return Caculate.herbivores_protect_rate * Caculate.national_protect
+            if Check.isPoiWithinPoly((i, j), part.animal_part):
+                return Caculate.herbivores_protect_rate * Caculate.animal_protect
+            if Check.isPoiWithinPoly((i, j), part.farm_part):
+                return Caculate.herbivores_protect_rate * Caculate.farm_protect
+        if type == "Carnivores":
+            if Check.isPoiWithinPoly((i, j), part.national_part):
+                return Caculate.carnivores_protect_rate * Caculate.national_protect
+            if Check.isPoiWithinPoly((i, j), part.animal_part):
+                return Caculate.carnivores_protect_rate * Caculate.animal_protect
+            if Check.isPoiWithinPoly((i, j), part.farm_part):
+                return Caculate.carnivores_protect_rate * Caculate.farm_protect
+        return 0
 
 
 if __name__ == '__main__':
